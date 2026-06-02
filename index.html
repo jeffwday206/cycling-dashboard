@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Jeff's Cycling Training Dashboard</title>
+
+  <!-- ============================================================
+       CONFIGURATION — replace the value below with your API key
+       and make sure your Google Sheet is shared as "Anyone with
+       the link can view".
+       ============================================================ -->
+  <script>
+    const CONFIG = {
+      SHEET_ID:  '1m38BeDDyJpr_onkggaHUAtuWGaKAorPZbY2ml0EOAKw',
+      API_KEY:   'd83ca44def6ba5a8cac6658c5813353a8baf9b09',   // ← paste your key here
+      NAME:      'Jeff',
+      EVENT_START: '2026-09-14',
+      EVENT_END:   '2026-09-19',
+      PROGRAM_START: 'May 30, 2026'
+    };
+  </script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:           #0b0f14;
+      --bg-card:      #131820;
+      --bg-card2:     #1a2030;
+      --border:       rgba(255,255,255,0.07);
+      --border-med:   rgba(255,255,255,0.12);
+      --text-primary: #eef0f4;
+      --text-secondary:#8a93a8;
+      --text-muted:   #4a5568;
+      --blue:         #3b82f6;
+      --blue-light:   #93c5fd;
+      --blue-dim:     rgba(59,130,246,0.15);
+      --green:        #22c55e;
+      --green-dim:    rgba(34,197,94,0.12);
+      --red:          #ef4444;
+      --red-dim:      rgba(239,68,68,0.12);
+      --amber:        #f59e0b;
+      --radius-sm:    6px;
+      --radius-md:    10px;
+      --radius-lg:    16px;
+      --mono:         'DM Mono', monospace;
+      --sans:         'DM Sans', sans-serif;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text-primary);
+      font-family: var(--sans);
+      font-size: 15px;
+      line-height: 1.5;
+      min-height: 100vh;
+      padding: 0;
+    }
+
+    /* ── top bar ── */
+    .topbar {
+      border-bottom: 1px solid var(--border);
+      padding: 16px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      background: rgba(11,15,20,0.92);
+      backdrop-filter: blur(12px);
+      z-index: 10;
+    }
+    .topbar-left { display: flex; align-items: center; gap: 12px; }
+    .logo-mark {
+      width: 32px; height: 32px; border-radius: 8px;
+      background: var(--blue); display: flex; align-items: center;
+      justify-content: center;
+    }
+    .logo-mark svg { width: 18px; height: 18px; fill: #fff; }
+    .topbar-title { font-size: 15px; font-weight: 500; color: var(--text-primary); }
+    .topbar-sub { font-size: 12px; color: var(--text-secondary); margin-top: 1px; }
+    .event-pill {
+      font-family: var(--mono);
+      font-size: 11px; font-weight: 500;
+      background: var(--blue-dim);
+      color: var(--blue-light);
+      border: 1px solid rgba(59,130,246,0.25);
+      border-radius: 999px;
+      padding: 4px 12px;
+      letter-spacing: 0.03em;
+    }
+    .event-pill span { color: var(--blue); font-weight: 600; margin-right: 4px; }
+
+    /* ── main layout ── */
+    .main { max-width: 1100px; margin: 0 auto; padding: 32px 32px 64px; }
+
+    /* ── section header ── */
+    .section-head {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 10px; font-weight: 600; letter-spacing: 0.1em;
+      text-transform: uppercase; color: var(--text-muted);
+      margin-bottom: 12px; margin-top: 32px;
+    }
+    .section-head::after {
+      content: ''; flex: 1; height: 1px; background: var(--border);
+    }
+    .section-head:first-child { margin-top: 0; }
+
+    /* ── metric cards ── */
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0,1fr));
+      gap: 10px;
+    }
+    .metric-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 16px 18px;
+      position: relative;
+      overflow: hidden;
+      transition: border-color 0.2s;
+    }
+    .metric-card:hover { border-color: var(--border-med); }
+    .metric-card::before {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0; height: 2px;
+      background: var(--blue);
+      opacity: 0.6;
+    }
+    .mc-icon {
+      font-size: 11px; font-weight: 600; letter-spacing: 0.08em;
+      text-transform: uppercase; color: var(--text-muted);
+      margin-bottom: 10px;
+    }
+    .mc-value {
+      font-family: var(--mono);
+      font-size: 26px; font-weight: 500;
+      color: var(--text-primary);
+      line-height: 1;
+      margin-bottom: 4px;
+    }
+    .mc-label { font-size: 12px; color: var(--text-secondary); }
+    .mc-delta {
+      display: inline-flex; align-items: center; gap: 3px;
+      font-family: var(--mono); font-size: 11px; font-weight: 500;
+      padding: 3px 8px; border-radius: 999px; margin-top: 8px;
+    }
+    .mc-delta.pos { background: var(--green-dim); color: var(--green); }
+    .mc-delta.neg { background: var(--red-dim); color: var(--red); }
+    .mc-delta.neu { background: rgba(255,255,255,0.05); color: var(--text-secondary); }
+
+    /* ── delta cards — accent color override ── */
+    .delta-card.pos::before { background: var(--green); }
+    .delta-card.neg::before { background: var(--red); }
+    .delta-val.pos { color: var(--green); }
+    .delta-val.neg { color: var(--red); }
+
+    /* ── up next card ── */
+    .next-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 20px 24px;
+      display: flex; align-items: center; gap: 20px;
+    }
+    .next-date-block {
+      background: var(--blue);
+      border-radius: var(--radius-md);
+      padding: 10px 16px; text-align: center; min-width: 68px;
+      flex-shrink: 0;
+    }
+    .next-day { font-family: var(--mono); font-size: 28px; font-weight: 500; color: #fff; line-height: 1; }
+    .next-mon { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; color: rgba(255,255,255,0.7); margin-top: 2px; text-transform: uppercase; }
+    .next-meta { font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 4px; }
+    .next-name { font-size: 16px; font-weight: 500; color: var(--text-primary); }
+
+    /* ── chart section ── */
+    .chart-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 20px 24px;
+      margin-top: 12px;
+    }
+    .chart-legend {
+      display: flex; gap: 16px;
+      font-size: 12px; color: var(--text-secondary);
+      margin-bottom: 16px;
+    }
+    .chart-legend span { display: flex; align-items: center; gap: 6px; }
+    .legend-dot { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+    .chart-wrap { position: relative; width: 100%; height: 220px; }
+
+    /* ── week label ── */
+    .week-pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 12px; color: var(--text-secondary);
+      background: var(--bg-card2); border: 1px solid var(--border);
+      border-radius: 999px; padding: 4px 12px; margin-bottom: 12px;
+    }
+    .week-pill-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--blue); }
+
+    /* ── sample data notice ── */
+    .sample-notice {
+      background: rgba(245,158,11,0.08);
+      border: 1px solid rgba(245,158,11,0.2);
+      border-radius: var(--radius-md);
+      padding: 10px 16px;
+      font-size: 12px; color: var(--amber);
+      margin-bottom: 24px;
+      display: none;
+    }
+    .sample-notice.show { display: block; }
+
+    /* ── progress bar ── */
+    .progress-section {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 20px 24px;
+      margin-top: 12px;
+    }
+    .progress-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .progress-label { font-size: 13px; color: var(--text-secondary); }
+    .progress-pct { font-family: var(--mono); font-size: 13px; color: var(--blue-light); }
+    .progress-bar-track {
+      width: 100%; height: 6px; background: rgba(255,255,255,0.07);
+      border-radius: 999px; overflow: hidden;
+    }
+    .progress-bar-fill {
+      height: 100%; background: var(--blue);
+      border-radius: 999px; transition: width 0.8s ease;
+    }
+
+    /* ── footer ── */
+    .footer {
+      text-align: center; padding: 24px;
+      font-size: 11px; color: var(--text-muted);
+      border-top: 1px solid var(--border);
+    }
+
+    @media (max-width: 680px) {
+      .metric-grid { grid-template-columns: repeat(2, 1fr); }
+      .main { padding: 20px 16px 48px; }
+      .topbar { padding: 12px 16px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── top bar ── -->
+<header class="topbar">
+  <div class="topbar-left">
+    <div class="logo-mark">
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z"/>
+      </svg>
+    </div>
+    <div>
+      <div class="topbar-title" id="page-title">Jeff's cycling training dashboard</div>
+      <div class="topbar-sub">Program start: <span id="prog-start">—</span></div>
+    </div>
+  </div>
+  <div class="event-pill"><span id="countdown-days">—</span> days to event &nbsp;·&nbsp; Sept 14–19, 2026</div>
+</header>
+
+<main class="main">
+
+  <!-- sample data notice -->
+  <div class="sample-notice" id="sample-notice">
+    ⚠ Showing sample data — add your Google Sheets API key to <code>CONFIG.API_KEY</code> in the &lt;script&gt; block at the top of this file to load live data.
+  </div>
+
+  <!-- ── section 1: cumulative ── -->
+  <div class="section-head">Cumulative totals</div>
+  <div class="metric-grid">
+    <div class="metric-card">
+      <div class="mc-icon">Workouts</div>
+      <div class="mc-value" id="c-workouts">—</div>
+      <div class="mc-label">total sessions</div>
+    </div>
+    <div class="metric-card">
+      <div class="mc-icon">Miles</div>
+      <div class="mc-value" id="c-miles">—</div>
+      <div class="mc-label">miles ridden</div>
+    </div>
+    <div class="metric-card">
+      <div class="mc-icon">Elevation</div>
+      <div class="mc-value" id="c-elevation">—</div>
+      <div class="mc-label">feet climbed</div>
+    </div>
+    <div class="metric-card">
+      <div class="mc-icon">Time</div>
+      <div class="mc-value" id="c-time">—</div>
+      <div class="mc-label">hh:mm ridden</div>
+    </div>
+  </div>
+
+  <!-- ── program progress bar ── -->
+  <div class="progress-section" style="margin-top:10px;">
+    <div class="progress-row">
+      <div class="progress-label">Program progress — week <span id="prog-week">—</span> of 16</div>
+      <div class="progress-pct" id="prog-pct">—%</div>
+    </div>
+    <div class="progress-bar-track">
+      <div class="progress-bar-fill" id="prog-bar" style="width:0%"></div>
+    </div>
+  </div>
+
+  <!-- ── section 2: this week ── -->
+  <div class="section-head">This week</div>
+  <div class="week-pill" id="week-pill">
+    <div class="week-pill-dot"></div>
+    <span id="week-label">Loading...</span>
+  </div>
+  <div class="metric-grid">
+    <div class="metric-card">
+      <div class="mc-icon">Workouts</div>
+      <div class="mc-value" id="w-workouts">—</div>
+      <div class="mc-label">this week</div>
+    </div>
+    <div class="metric-card">
+      <div class="mc-icon">Miles</div>
+      <div class="mc-value" id="w-miles">—</div>
+      <div class="mc-label">this week</div>
+    </div>
+    <div class="metric-card">
+      <div class="mc-icon">Elevation</div>
+      <div class="mc-value" id="w-elevation">—</div>
+      <div class="mc-label">feet this week</div>
+    </div>
+    <div class="metric-card">
+      <div class="mc-icon">Time</div>
+      <div class="mc-value" id="w-time">—</div>
+      <div class="mc-label">hh:mm this week</div>
+    </div>
+  </div>
+
+  <!-- ── section 3: delta to plan ── -->
+  <div class="section-head">Delta to plan — this week</div>
+  <div class="metric-grid">
+    <div class="metric-card delta-card" id="dc-workouts">
+      <div class="mc-icon">Workouts</div>
+      <div class="mc-value delta-val" id="d-workouts">—</div>
+      <div class="mc-label">vs planned</div>
+    </div>
+    <div class="metric-card delta-card" id="dc-miles">
+      <div class="mc-icon">Miles</div>
+      <div class="mc-value delta-val" id="d-miles">—</div>
+      <div class="mc-label">vs planned</div>
+    </div>
+    <div class="metric-card delta-card" id="dc-elevation">
+      <div class="mc-icon">Elevation</div>
+      <div class="mc-value delta-val" id="d-elevation">—</div>
+      <div class="mc-label">vs planned</div>
+    </div>
+    <div class="metric-card delta-card" id="dc-time">
+      <div class="mc-icon">Time</div>
+      <div class="mc-value delta-val" id="d-time">—</div>
+      <div class="mc-label">vs planned</div>
+    </div>
+  </div>
+
+  <!-- ── section 4: up next ── -->
+  <div class="section-head">Up next</div>
+  <div class="next-card">
+    <div class="next-date-block">
+      <div class="next-day" id="next-day">—</div>
+      <div class="next-mon" id="next-mon">—</div>
+    </div>
+    <div>
+      <div class="next-meta">Next planned session</div>
+      <div class="next-name" id="next-session">Loading...</div>
+    </div>
+  </div>
+
+  <!-- ── section 5: chart ── -->
+  <div class="section-head">Weekly miles — actual vs planned</div>
+  <div class="chart-card">
+    <div class="chart-legend">
+      <span><span class="legend-dot" style="background:#3b82f6;"></span>Actual</span>
+      <span><span class="legend-dot" style="background:rgba(59,130,246,0.25); border:1px solid rgba(59,130,246,0.4);"></span>Planned</span>
+    </div>
+    <div class="chart-wrap">
+      <canvas id="milesChart" role="img" aria-label="Bar chart comparing actual versus planned miles for each of the 16 training weeks">Weekly miles: actual vs planned across 16 training weeks.</canvas>
+    </div>
+  </div>
+
+</main>
+
+<footer class="footer">
+  Last loaded: <span id="load-time">—</span> &nbsp;·&nbsp; Data source: Google Sheets &nbsp;·&nbsp; Jeff's Cycling Training 2026
+</footer>
+
+<script>
+// ── helpers ──────────────────────────────────────────────────────
+function minsToHHMM(mins) {
+  if (mins == null || isNaN(mins) || mins === '') return '—';
+  const m = Math.round(Math.abs(parseFloat(mins)));
+  const h = Math.floor(m / 60);
+  const mm = m % 60;
+  const sign = parseFloat(mins) < 0 ? '-' : '';
+  return sign + h + ':' + String(mm).padStart(2, '0');
+}
+
+function fmtNum(n, dec) {
+  const v = parseFloat(n);
+  if (isNaN(v)) return '—';
+  return v.toLocaleString('en-US', { maximumFractionDigits: dec || 0, minimumFractionDigits: dec || 0 });
+}
+
+function sign(v) { return v >= 0 ? '+' : ''; }
+
+function applyDelta(cardId, valId, val) {
+  const card = document.getElementById(cardId);
+  const el   = document.getElementById(valId);
+  if (!card || !el) return;
+  const cls = parseFloat(val) >= 0 ? 'pos' : 'neg';
+  card.classList.add(cls);
+  el.classList.add(cls);
+}
+
+function parseSheetDate(str) {
+  if (!str) return null;
+  const d = new Date(str.trim());
+  return isNaN(d) ? null : d;
+}
+
+function getCurrentWeekIdx(rows) {
+  const today = new Date(); today.setHours(0,0,0,0);
+  let fallback = 0;
+  for (let i = 0; i < rows.length; i++) {
+    const ws = parseSheetDate(rows[i][0]);
+    if (!ws) continue;
+    const we = new Date(ws); we.setDate(we.getDate() + 7);
+    if (today >= ws && today < we) return i;
+    if (ws <= today) fallback = i;
+  }
+  return fallback;
+}
+
+function setCountdown() {
+  const event = new Date(CONFIG.EVENT_START);
+  const today = new Date();
+  const days  = Math.ceil((event - today) / 86400000);
+  const el    = document.getElementById('countdown-days');
+  if (el) el.textContent = days > 0 ? days : '🎉';
+}
+
+// ── fetch from Sheets API ─────────────────────────────────────────
+async function fetchRange(tab, range) {
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${CONFIG.SHEET_ID}/values/${encodeURIComponent(tab + '!' + range)}?key=${CONFIG.API_KEY}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Sheets API ${res.status}`);
+  const json = await res.json();
+  return json.values || [];
+}
+
+// ── populate DOM ─────────────────────────────────────────────────
+function populate(dm, wsRows) {
+  // cumulative
+  document.getElementById('c-workouts').textContent  = fmtNum(dm['Total Workouts']);
+  document.getElementById('c-miles').textContent      = fmtNum(dm['Total Miles Ridden'], 1);
+  document.getElementById('c-elevation').textContent  = fmtNum(dm['Total Elevation Climbed (ft)']);
+  const totalMins = parseFloat(dm['Total Time Riding (hours)'] || 0) * 60;
+  document.getElementById('c-time').textContent       = minsToHHMM(totalMins);
+
+  // up next
+  const nd = parseSheetDate(dm['nextsessdate'] || '');
+  if (nd) {
+    document.getElementById('next-day').textContent = nd.getDate();
+    document.getElementById('next-mon').textContent = nd.toLocaleString('en-US', { month: 'short' }).toUpperCase();
+  }
+  document.getElementById('next-session').textContent = dm['nextupsess'] || 'No upcoming session found';
+
+  // current week
+  const dataRows = wsRows.slice(1);
+  const wIdx = getCurrentWeekIdx(dataRows);
+  const w = dataRows[wIdx] || [];
+
+  const weekNum = w[1] || (wIdx + 1);
+  document.getElementById('week-label').textContent = `Week ${weekNum} · ${w[0] || ''}`;
+
+  // program progress bar
+  const pct = Math.round((parseInt(weekNum) / 16) * 100);
+  document.getElementById('prog-week').textContent = weekNum;
+  document.getElementById('prog-pct').textContent  = pct + '%';
+  document.getElementById('prog-bar').style.width  = pct + '%';
+
+  // weekly actuals
+  document.getElementById('w-workouts').textContent = fmtNum(w[3]);
+  document.getElementById('w-miles').textContent    = fmtNum(w[4], 1);
+  document.getElementById('w-elevation').textContent= fmtNum(w[5]);
+  document.getElementById('w-time').textContent     = minsToHHMM(parseFloat(w[6] || 0));
+
+  // deltas
+  const dW = parseFloat(w[11] || 0);
+  const dM = parseFloat(w[12] || 0);
+  const dE = parseFloat(w[13] || 0);
+  const dT = parseFloat(w[14] || 0);
+
+  document.getElementById('d-workouts').textContent  = sign(dW) + fmtNum(dW);
+  document.getElementById('d-miles').textContent     = sign(dM) + fmtNum(dM, 1);
+  document.getElementById('d-elevation').textContent = sign(dE) + fmtNum(dE);
+  document.getElementById('d-time').textContent      = minsToHHMM(dT);
+
+  applyDelta('dc-workouts',  'd-workouts',  dW);
+  applyDelta('dc-miles',     'd-miles',     dM);
+  applyDelta('dc-elevation', 'd-elevation', dE);
+  applyDelta('dc-time',      'd-time',      dT);
+
+  // chart data
+  const labels  = dataRows.map((r, i) => 'Wk ' + (r[1] || (i + 1)));
+  const actual  = dataRows.map(r => parseFloat(r[4])  || 0);
+  const planned = dataRows.map(r => parseFloat(r[8])  || 0);
+  buildChart(labels, actual, planned);
+}
+
+// ── sample data fallback ─────────────────────────────────────────
+function loadSample() {
+  document.getElementById('sample-notice').classList.add('show');
+  const dm = {
+    'Total Workouts': '2',
+    'Total Miles Ridden': '53.0',
+    'Total Elevation Climbed (ft)': '5164',
+    'Total Time Riding (hours)': '5.27',
+    'nextsessdate': '2026-06-02',
+    'nextupsess': 'Indoor trainer – Sweet Spot (45 min)'
+  };
+  const wsHeader = ['Week Start','Week #','Phase','Workouts','Miles','Elevation (ft)','Time (min)','','Planned Workouts','Planned Miles','Planned Elevation','Planned Time','Delta Workouts','Delta Miles','Delta Elevation','Delta Time'];
+  const weeks = [
+    ['2026-06-01','1','Base / prep','2','53.0','5164','316','','3','49','1800','240','-1','4.0','3364','76'],
+    ['2026-06-08','2','Base / prep','0','0','0','0','','3','55','2200','265','-3','-55','-2200','-265'],
+    ['2026-06-15','3','Vacation','0','0','0','0','','1','12','0','40','-1','-12','0','-40'],
+    ['2026-06-22','4','Vacation','0','0','0','0','','0','0','0','0','0','0','0','0'],
+    ['2026-06-29','5','Vacation','0','0','0','0','','1','0','0','0','-1','0','0','0'],
+    ['2026-07-06','6','Re-entry','0','0','0','0','','3','64','1800','235','0','0','0','0'],
+    ['2026-07-13','7','Build 1','0','0','0','0','','3','80','2500','295','0','0','0','0'],
+    ['2026-07-20','8','Build 1','0','0','0','0','','3','86','3000','320','0','0','0','0'],
+    ['2026-07-27','9','Recovery','0','0','0','0','','3','66','1800','235','0','0','0','0'],
+    ['2026-08-03','10','Build 2','0','0','0','0','','3','93','3200','345','0','0','0','0'],
+    ['2026-08-10','11','Build 2','0','0','0','0','','3','101','3500','375','0','0','0','0'],
+    ['2026-08-17','12','Peak','0','0','0','0','','3','103','4000','385','0','0','0','0'],
+    ['2026-08-24','13','Recovery','0','0','0','0','','3','72','2000','265','0','0','0','0'],
+    ['2026-08-31','14','Peak sim','0','0','0','0','','3','99','4000','370','0','0','0','0'],
+    ['2026-09-07','15','Taper','0','0','0','0','','3','57','1200','210','0','0','0','0'],
+    ['2026-09-14','16','Event','0','0','0','0','','6','305','18500','1620','0','0','0','0'],
+  ];
+  populate(dm, [wsHeader, ...weeks]);
+}
+
+// ── Chart.js ─────────────────────────────────────────────────────
+function buildChart(labels, actual, planned) {
+  const ctx = document.getElementById('milesChart');
+  if (!ctx) return;
+  if (ctx._chartInstance) ctx._chartInstance.destroy();
+  ctx._chartInstance = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Actual',
+          data: actual,
+          backgroundColor: '#3b82f6',
+          borderRadius: 3,
+          borderSkipped: false
+        },
+        {
+          label: 'Planned',
+          data: planned,
+          backgroundColor: 'rgba(59,130,246,0.2)',
+          borderColor: 'rgba(59,130,246,0.35)',
+          borderWidth: 1,
+          borderRadius: 3,
+          borderSkipped: false
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#1a2030',
+          borderColor: 'rgba(255,255,255,0.1)',
+          borderWidth: 1,
+          titleColor: '#8a93a8',
+          bodyColor: '#eef0f4',
+          callbacks: {
+            label: c => c.dataset.label + ': ' + parseFloat(c.parsed.y).toFixed(1) + ' mi'
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: { display: false },
+          border: { color: 'rgba(255,255,255,0.07)' },
+          ticks: {
+            color: '#4a5568', font: { size: 10, family: "'DM Mono', monospace" },
+            maxRotation: 0, autoSkip: false
+          }
+        },
+        y: {
+          grid: { color: 'rgba(255,255,255,0.05)' },
+          border: { color: 'transparent' },
+          ticks: {
+            color: '#4a5568', font: { size: 10, family: "'DM Mono', monospace" },
+            callback: v => v + ' mi'
+          }
+        }
+      }
+    }
+  });
+}
+
+// ── init ─────────────────────────────────────────────────────────
+async function init() {
+  document.getElementById('page-title').textContent  = `${CONFIG.NAME}'s cycling training dashboard`;
+  document.getElementById('prog-start').textContent  = CONFIG.PROGRAM_START;
+  document.getElementById('load-time').textContent   = new Date().toLocaleString();
+  setCountdown();
+
+  if (CONFIG.API_KEY === 'YOUR_GOOGLE_SHEETS_API_KEY_HERE') {
+    loadSample();
+    return;
+  }
+
+  try {
+    const [dmRaw, wsRaw] = await Promise.all([
+      fetchRange('Dashboard Metrics', 'A1:B20'),
+      fetchRange('Weekly Summary',    'A1:O18')
+    ]);
+
+    const dm = {};
+    dmRaw.forEach(row => {
+      if (row[0]) dm[row[0].trim()] = (row[1] || '').trim();
+    });
+
+    populate(dm, wsRaw);
+  } catch (err) {
+    console.error('Failed to load sheet data:', err);
+    loadSample();
+  }
+}
+
+init();
+</script>
+</body>
+</html>
