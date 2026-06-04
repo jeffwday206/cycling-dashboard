@@ -18,6 +18,13 @@
   <script>
     const CONFIG = {
       SHEET_ID:  '1m38BeDDyJpr_onkggaHUAtuWGaKAorPZbY2ml0EOAKw',
+
+      // gid of the "Dashboard Metrics" tab. Find it by clicking that
+      // tab in Google Sheets and copying the number after "gid=" in
+      // the browser URL (…#gid=123456789). This tab is read via the
+      // CSV export endpoint so long text cells (B13) aren't dropped.
+      DASHBOARD_METRICS_GID: '31342411',
+
       NAME:      'Jeff',
       EVENT_START: '2026-09-14',
       EVENT_END:   '2026-09-19',
@@ -474,13 +481,24 @@ function setCountdown() {
   if (el) el.textContent = days > 0 ? days : '🎉';
 }
 
-// ── fetch from Sheets (keyless, via public CSV endpoint) ─────────
-// Requires the sheet to be shared "Anyone with the link -> Viewer".
-async function fetchTab(tabName) {
-  const url = `https://docs.google.com/spreadsheets/d/${CONFIG.SHEET_ID}` +
-              `/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tabName)}`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Sheets fetch ${res.status} for "${tabName}"`);
+// ── fetch from Sheets (keyless) ──────────────────────────────────
+// Two endpoints, both require "Anyone with the link -> Viewer":
+//   • export?format=csv&gid=…  → dumps cells verbatim (no type guessing).
+//     Used for "Dashboard Metrics" so long text cells survive.
+//   • gviz/tq?tqx=out:csv&sheet=…  → addresses a tab by name.
+//     Fine for the uniform numeric columns of "Weekly Summary".
+function csvUrl(opts) {
+  const base = `https://docs.google.com/spreadsheets/d/${CONFIG.SHEET_ID}`;
+  if (opts.gid !== undefined && opts.gid !== null &&
+      opts.gid !== '' && opts.gid !== 'PASTE_GID_HERE') {
+    return `${base}/export?format=csv&gid=${opts.gid}`;
+  }
+  return `${base}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(opts.sheet)}`;
+}
+
+async function fetchCSV(opts) {
+  const res = await fetch(csvUrl(opts));
+  if (!res.ok) throw new Error(`Sheets fetch ${res.status} (${opts.gid || opts.sheet})`);
   return parseCSV(await res.text());
 }
 
@@ -680,8 +698,10 @@ async function init() {
 
   try {
     const [dmRaw, wsRaw] = await Promise.all([
-      fetchTab('Dashboard Metrics'),
-      fetchTab('Weekly Summary')
+      // Dashboard Metrics via CSV export (gid) so long text in B13 survives.
+      // Falls back to gviz-by-name if the gid hasn't been filled in yet.
+      fetchCSV({ gid: CONFIG.DASHBOARD_METRICS_GID, sheet: 'Dashboard Metrics' }),
+      fetchCSV({ sheet: 'Weekly Summary' })
     ]);
 
     // Build the metrics map from label/value pairs (col A -> col B),
