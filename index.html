@@ -6,14 +6,18 @@
   <title>Jeff's Cycling Training Dashboard</title>
 
   <!-- ============================================================
-       CONFIGURATION — replace the value below with your API key
-       and make sure your Google Sheet is shared as "Anyone with
-       the link can view".
+       CONFIGURATION
+       No API key needed. This dashboard reads the sheet through
+       Google's public CSV endpoint, so the ONLY requirement is:
+
+         Share the Google Sheet as
+         "Anyone with the link"  ->  "Viewer"
+
+       (File > Share > General access > Anyone with the link = Viewer)
        ============================================================ -->
   <script>
     const CONFIG = {
       SHEET_ID:  '1m38BeDDyJpr_onkggaHUAtuWGaKAorPZbY2ml0EOAKw',
-      API_KEY:   'd83ca44def6ba5a8cac6658c5813353a8baf9b09',   // ← paste your key here
       NAME:      'Jeff',
       EVENT_START: '2026-09-14',
       EVENT_END:   '2026-09-19',
@@ -275,7 +279,7 @@
 
   <!-- sample data notice -->
   <div class="sample-notice" id="sample-notice">
-    ⚠ Showing sample data — add your Google Sheets API key to <code>CONFIG.API_KEY</code> in the &lt;script&gt; block at the top of this file to load live data.
+    ⚠ Showing sample data — couldn't reach the Google Sheet. Make sure the sheet is shared as <code>Anyone with the link → Viewer</code>. (Open the browser console for the exact error.)
   </div>
 
   <!-- ── section 1: cumulative ── -->
@@ -401,17 +405,33 @@
 
 <script>
 // ── helpers ──────────────────────────────────────────────────────
+// Parse a number that may arrive as a formatted string like "5,164"
+function num(n) {
+  if (n == null) return NaN;
+  return parseFloat(String(n).replace(/,/g, '').trim());
+}
+
+// Tolerant lookup into the Dashboard Metrics map: ignores case,
+// trailing colons and surrounding whitespace on the label.
+function get(map, label) {
+  const want = String(label).trim().replace(/:$/, '').toLowerCase();
+  for (const k in map) {
+    if (k.trim().replace(/:$/, '').toLowerCase() === want) return map[k];
+  }
+  return '';
+}
+
 function minsToHHMM(mins) {
   if (mins == null || isNaN(mins) || mins === '') return '—';
-  const m = Math.round(Math.abs(parseFloat(mins)));
+  const m = Math.round(Math.abs(num(mins)));
   const h = Math.floor(m / 60);
   const mm = m % 60;
-  const sign = parseFloat(mins) < 0 ? '-' : '';
-  return sign + h + ':' + String(mm).padStart(2, '0');
+  const sgn = num(mins) < 0 ? '-' : '';
+  return sgn + h + ':' + String(mm).padStart(2, '0');
 }
 
 function fmtNum(n, dec) {
-  const v = parseFloat(n);
+  const v = num(n);
   if (isNaN(v)) return '—';
   return v.toLocaleString('en-US', { maximumFractionDigits: dec || 0, minimumFractionDigits: dec || 0 });
 }
@@ -454,34 +474,63 @@ function setCountdown() {
   if (el) el.textContent = days > 0 ? days : '🎉';
 }
 
-// ── fetch from Sheets API ─────────────────────────────────────────
-async function fetchRange(tab, range) {
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${CONFIG.SHEET_ID}/values/${encodeURIComponent(tab + '!' + range)}?key=${CONFIG.API_KEY}`;
+// ── fetch from Sheets (keyless, via public CSV endpoint) ─────────
+// Requires the sheet to be shared "Anyone with the link -> Viewer".
+async function fetchTab(tabName) {
+  const url = `https://docs.google.com/spreadsheets/d/${CONFIG.SHEET_ID}` +
+              `/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tabName)}`;
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`Sheets API ${res.status}`);
-  const json = await res.json();
-  return json.values || [];
+  if (!res.ok) throw new Error(`Sheets fetch ${res.status} for "${tabName}"`);
+  return parseCSV(await res.text());
+}
+
+// Minimal CSV parser that respects quoted fields containing commas
+// (e.g. "5,164") and escaped quotes ("").
+function parseCSV(text) {
+  const rows = [];
+  let row = [], field = '', inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQ) {
+      if (c === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; }
+        else inQ = false;
+      } else field += c;
+    } else if (c === '"') {
+      inQ = true;
+    } else if (c === ',') {
+      row.push(field); field = '';
+    } else if (c === '\n') {
+      row.push(field); rows.push(row); row = []; field = '';
+    } else if (c !== '\r') {
+      field += c;
+    }
+  }
+  if (field.length || row.length) { row.push(field); rows.push(row); }
+  return rows;
 }
 
 // ── populate DOM ─────────────────────────────────────────────────
 function populate(dm, wsRows) {
   // cumulative
-  document.getElementById('c-workouts').textContent  = fmtNum(dm['Total Workouts']);
-  document.getElementById('c-miles').textContent      = fmtNum(dm['Total Miles Ridden'], 1);
-  document.getElementById('c-elevation').textContent  = fmtNum(dm['Total Elevation Climbed (ft)']);
-  const totalMins = parseFloat(dm['Total Time Riding (hours)'] || 0) * 60;
+  document.getElementById('c-workouts').textContent  = fmtNum(get(dm, 'Total Workouts'));
+  document.getElementById('c-miles').textContent      = fmtNum(get(dm, 'Total Miles Ridden'), 1);
+  document.getElementById('c-elevation').textContent  = fmtNum(get(dm, 'Total Elevation Climbed (ft)'));
+  const totalMins = (num(get(dm, 'Total Time Riding (hours)')) || 0) * 60;
   document.getElementById('c-time').textContent       = minsToHHMM(totalMins);
 
-  // up next
-  const nd = parseSheetDate(dm['nextsessdate'] || '');
+  // up next  (labels in the sheet are "Next session Date:" and "Next up:")
+  const nd = parseSheetDate(get(dm, 'Next session Date'));
   if (nd) {
     document.getElementById('next-day').textContent = nd.getDate();
     document.getElementById('next-mon').textContent = nd.toLocaleString('en-US', { month: 'short' }).toUpperCase();
   }
-  document.getElementById('next-session').textContent = dm['nextupsess'] || 'No upcoming session found';
+  document.getElementById('next-session').textContent = get(dm, 'Next up') || 'No upcoming session found';
 
-  // current week
-  const dataRows = wsRows.slice(1);
+  // current week — keep only rows whose first cell is a real date.
+  // This drops BOTH header rows of "Weekly Summary" (the merged band
+  // row and the column-label row) without hard-coding an offset.
+  const dataRows = wsRows.filter(r => parseSheetDate(r[0]));
   const wIdx = getCurrentWeekIdx(dataRows);
   const w = dataRows[wIdx] || [];
 
@@ -498,13 +547,13 @@ function populate(dm, wsRows) {
   document.getElementById('w-workouts').textContent = fmtNum(w[3]);
   document.getElementById('w-miles').textContent    = fmtNum(w[4], 1);
   document.getElementById('w-elevation').textContent= fmtNum(w[5]);
-  document.getElementById('w-time').textContent     = minsToHHMM(parseFloat(w[6] || 0));
+  document.getElementById('w-time').textContent     = minsToHHMM(num(w[6]) || 0);
 
   // deltas
-  const dW = parseFloat(w[11] || 0);
-  const dM = parseFloat(w[12] || 0);
-  const dE = parseFloat(w[13] || 0);
-  const dT = parseFloat(w[14] || 0);
+  const dW = num(w[11]) || 0;
+  const dM = num(w[12]) || 0;
+  const dE = num(w[13]) || 0;
+  const dT = num(w[14]) || 0;
 
   document.getElementById('d-workouts').textContent  = sign(dW) + fmtNum(dW);
   document.getElementById('d-miles').textContent     = sign(dM) + fmtNum(dM, 1);
@@ -518,8 +567,8 @@ function populate(dm, wsRows) {
 
   // chart data
   const labels  = dataRows.map((r, i) => 'Wk ' + (r[1] || (i + 1)));
-  const actual  = dataRows.map(r => parseFloat(r[4])  || 0);
-  const planned = dataRows.map(r => parseFloat(r[8])  || 0);
+  const actual  = dataRows.map(r => num(r[4])  || 0);
+  const planned = dataRows.map(r => num(r[8])  || 0);
   buildChart(labels, actual, planned);
 }
 
@@ -531,8 +580,8 @@ function loadSample() {
     'Total Miles Ridden': '53.0',
     'Total Elevation Climbed (ft)': '5164',
     'Total Time Riding (hours)': '5.27',
-    'nextsessdate': '2026-06-02',
-    'nextupsess': 'Indoor trainer – Sweet Spot (45 min)'
+    'Next session Date': '2026-06-06',
+    'Next up': 'Outdoor long ride — 35 mi endurance (150 min)'
   };
   const wsHeader = ['Week Start','Week #','Phase','Workouts','Miles','Elevation (ft)','Time (min)','','Planned Workouts','Planned Miles','Planned Elevation','Planned Time','Delta Workouts','Delta Miles','Delta Elevation','Delta Time'];
   const weeks = [
@@ -629,20 +678,17 @@ async function init() {
   document.getElementById('load-time').textContent   = new Date().toLocaleString();
   setCountdown();
 
-  if (CONFIG.API_KEY === 'YOUR_GOOGLE_SHEETS_API_KEY_HERE') {
-    loadSample();
-    return;
-  }
-
   try {
     const [dmRaw, wsRaw] = await Promise.all([
-      fetchRange('Dashboard Metrics', 'A1:B20'),
-      fetchRange('Weekly Summary',    'A1:O18')
+      fetchTab('Dashboard Metrics'),
+      fetchTab('Weekly Summary')
     ]);
 
+    // Build the metrics map from label/value pairs (col A -> col B),
+    // scanning every row so the irregular title/blank rows don't matter.
     const dm = {};
     dmRaw.forEach(row => {
-      if (row[0]) dm[row[0].trim()] = (row[1] || '').trim();
+      if (row[0] && row[0].trim()) dm[row[0].trim()] = (row[1] || '').trim();
     });
 
     populate(dm, wsRaw);
